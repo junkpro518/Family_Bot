@@ -35,13 +35,20 @@ class Relative:
 
 class NotionClient:
     def __init__(self, token: str, database_id: str) -> None:
-        self._client = Client(auth=token, notion_version="2022-06-28")
+        self._client = Client(auth=token)
         self._database_id = database_id
+        db = self._client.databases.retrieve(database_id=database_id)
+        sources = db.get("data_sources") or []
+        if not sources:
+            raise RuntimeError(
+                f"Notion database {database_id} has no data sources"
+            )
+        self._data_source_id: str = sources[0]["id"]
 
     def ensure_schema(self) -> list[str]:
         """Verify required properties exist. Returns list of missing properties."""
-        db = self._client.databases.retrieve(database_id=self._database_id)
-        existing = set(db["properties"].keys())
+        ds = self._client.data_sources.retrieve(data_source_id=self._data_source_id)
+        existing = set(ds.get("properties", {}).keys())
         required = {
             NOTION_NAME_PROPERTY,
             NOTION_TARGET_PROPERTY,
@@ -69,8 +76,8 @@ class NotionClient:
                 logger.warning("Cannot auto-add title property; please ensure it exists.")
                 continue
         if new_props:
-            self._client.databases.update(
-                database_id=self._database_id, properties=new_props
+            self._client.data_sources.update(
+                data_source_id=self._data_source_id, properties=new_props
             )
 
     def get_all_relatives(self) -> list[Relative]:
@@ -78,10 +85,13 @@ class NotionClient:
         results: list[Relative] = []
         cursor: str | None = None
         while True:
-            kwargs: dict[str, Any] = {"database_id": self._database_id, "page_size": 100}
+            kwargs: dict[str, Any] = {
+                "data_source_id": self._data_source_id,
+                "page_size": 100,
+            }
             if cursor:
                 kwargs["start_cursor"] = cursor
-            response = self._client.databases.query(**kwargs)
+            response = self._client.data_sources.query(**kwargs)
             for page in response.get("results", []):
                 relative = self._parse_page(page)
                 if relative is not None:
@@ -189,7 +199,7 @@ class NotionClient:
                 "checkbox": weekday in allowed_weekdays if weekday is not None else False
             }
         page = self._client.pages.create(
-            parent={"database_id": self._database_id},
+            parent={"data_source_id": self._data_source_id},
             properties=properties,
         )
         return page["id"]
