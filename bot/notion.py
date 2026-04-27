@@ -35,7 +35,7 @@ class Relative:
 
 class NotionClient:
     def __init__(self, token: str, database_id: str) -> None:
-        self._client = Client(auth=token)
+        self._client = Client(auth=token, notion_version="2022-06-28")
         self._database_id = database_id
 
     def ensure_schema(self) -> list[str]:
